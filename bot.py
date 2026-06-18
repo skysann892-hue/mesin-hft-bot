@@ -1,11 +1,10 @@
-import ccxt
 import time
 import requests
 from datetime import datetime
 from flask import Flask
 import threading
 import os
-import statistics  # Ini adalah senjata bawaan pengganti pandas yang super ringan
+import statistics
 
 # ==================================================
 # 1. INISIALISASI PENYAMARAN WEB (FLASK)
@@ -17,7 +16,7 @@ def home():
     return "Lapor! Markas Bot HFT Aktif dan Berjalan!"
 
 # ==================================================
-# 2. MESIN UTAMA BOT TRADING (VERSI LITE TANPA PANDAS)
+# 2. MESIN UTAMA BOT TRADING (SUPER LITE)
 # ==================================================
 def jalankan_bot():
     TELEGRAM_TOKEN = "8245773813:AAEkD4fEBRyAsZdwXjN0OSV6zXGObOpG7Ww"
@@ -29,10 +28,11 @@ def jalankan_bot():
             payload = {"chat_id": CHAT_ID, "text": pesan, "parse_mode": "Markdown"}
             requests.post(url, json=payload)
         except Exception as e:
-            print(f"⚠️ Gagal mengirim laporan ke Telegram: {e}")
+            print(f"⚠️ Gagal menghantar laporan ke Telegram: {e}")
 
-    exchange = ccxt.binanceus()
-    symbol = 'BTC/USDT'
+    # Menggunakan API awam Binance terus tanpa ccxt
+    symbol = 'BTCUSDT'
+    url_binance = f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
 
     saldo_usdt = 100.0
     posisi = "KOSONG"     
@@ -40,22 +40,21 @@ def jalankan_bot():
     ukuran_kontrak = 0.0  
 
     ambang_z = 2.0
-    window_size = 60 
 
     print("==================================================")
-    print("⚔️ MESIN HFT LITE + ALARM TELEGRAM AKTIF!")
+    print("⚔️ MESIN HFT SUPER LITE + ALARM TELEGRAM AKTIF!")
     print(f"Mengintai: {symbol} | Batas: Z-Score +/- {ambang_z}")
     print("==================================================\n")
 
-    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT Lite resmi diaktifkan di Termux. Radar siap berburu!")
+    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT Super Lite rasmi diaktifkan di Termux. Bebas halangan!")
 
     while True:
         try:
-            # Menarik data dari bursa (Format: [timestamp, open, high, low, close, volume])
-            ohlcv = exchange.fetch_ohlcv(symbol, '1m', limit=window_size)
+            # Menyedot data pasaran secara terus (Sangat pantas dan ringan)
+            respons = requests.get(url_binance).json()
             
-            # Mengambil hanya kolom 'close' (indeks ke-4) tanpa pandas
-            daftar_close = [lilin[4] for lilin in ohlcv]
+            # Mengambil hanya harga 'close' (indeks ke-4) dan mengubahnya menjadi nombor (float)
+            daftar_close = [float(lilin[4]) for lilin in respons]
             
             harga_sekarang = daftar_close[-1]
             ma = statistics.mean(daftar_close)
@@ -63,7 +62,7 @@ def jalankan_bot():
             try:
                 std = statistics.stdev(daftar_close)
             except statistics.StatisticsError:
-                std = 0.0 # Mencegah error jika data kurang
+                std = 0.0001
                 
             if std == 0: std = 0.0001 
             
@@ -77,27 +76,27 @@ def jalankan_bot():
                 posisi = "LONG"
                 harga_masuk = harga_sekarang
                 ukuran_kontrak = saldo_usdt / harga_sekarang
-                notifikasi = f"🟢 *[ALARM BUKA LONG]*\n📉 Z-Score ekstrem: {z_score:.2f}\n💰 Membeli kontrak di harga: {harga_masuk:.2f} USDT"
+                notifikasi = f"🟢 *[ALARM BUKA LONG]*\n📉 Z-Score ekstrem: {z_score:.2f}\n💰 Membeli kontrak pada harga: {harga_masuk:.2f} USDT"
                 kirim_laporan_telegram(notifikasi)
                 
             elif posisi == "KOSONG" and z_score > ambang_z:
                 posisi = "SHORT"
                 harga_masuk = harga_sekarang
                 ukuran_kontrak = saldo_usdt / harga_sekarang
-                notifikasi = f"🔴 *[ALARM BUKA SHORT]*\n📈 Z-Score ekstrem: {z_score:.2f}\n🎯 Menjual kosong di harga: {harga_masuk:.2f} USDT"
+                notifikasi = f"🔴 *[ALARM BUKA SHORT]*\n📈 Z-Score ekstrem: {z_score:.2f}\n🎯 Menjual kosong pada harga: {harga_masuk:.2f} USDT"
                 kirim_laporan_telegram(notifikasi)
 
             elif posisi == "LONG" and z_score >= 0:
                 saldo_usdt = ukuran_kontrak * harga_sekarang
                 posisi = "KOSONG"
-                notifikasi = f"💰 *[TAKE PROFIT LONG SUCCESS]*\n⚖️ Z-Score normal: {z_score:.2f}\n🚪 Keluar di harga: {harga_sekarang:.2f}\n💵 Saldo: {saldo_usdt:.4f} USDT"
+                notifikasi = f"💰 *[TAKE PROFIT LONG SUCCESS]*\n⚖️ Z-Score normal: {z_score:.2f}\n🚪 Keluar pada harga: {harga_sekarang:.2f}\n💵 Baki: {saldo_usdt:.4f} USDT"
                 kirim_laporan_telegram(notifikasi)
 
             elif posisi == "SHORT" and z_score <= 0:
                 profit = (harga_masuk - harga_sekarang) * ukuran_kontrak
                 saldo_usdt = saldo_usdt + profit
                 posisi = "KOSONG"
-                notifikasi = f"💰 *[TAKE PROFIT SHORT SUCCESS]*\n⚖️ Z-Score normal: {z_score:.2f}\n🚪 Keluar di harga: {harga_sekarang:.2f}\n💵 Saldo: {saldo_usdt:.4f} USDT"
+                notifikasi = f"💰 *[TAKE PROFIT SHORT SUCCESS]*\n⚖️ Z-Score normal: {z_score:.2f}\n🚪 Keluar pada harga: {harga_sekarang:.2f}\n💵 Baki: {saldo_usdt:.4f} USDT"
                 kirim_laporan_telegram(notifikasi)
                 
             time.sleep(10)
@@ -116,4 +115,4 @@ if __name__ == "__main__":
     
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
-
+        
