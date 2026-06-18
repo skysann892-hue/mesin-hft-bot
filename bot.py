@@ -19,7 +19,7 @@ def home():
     return "Lapor! Markas Bot HFT Aktif dan Berjalan!"
 
 # ==================================================
-# 2. MESIN UTAMA BOT TRADING
+# 2. MESIN UTAMA BOT TRADING (EDISI BYBIT)
 # ==================================================
 def jalankan_bot():
     TELEGRAM_TOKEN = "8245773813:AAEkD4fEBRyAsZdwXjN0OSV6zXGObOpG7Ww"
@@ -33,9 +33,9 @@ def jalankan_bot():
         except Exception as e:
             pass
 
-    # KEMBALI MENGGUNAKAN JALUR UTAMA BINANCE KARENA VPN AKTIF
+    # MENGGUNAKAN JALUR API BYBIT V5 (PASAR FUTURES / LINEAR)
     symbol = 'BTCUSDT'
-    url_binance = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
+    url_bybit = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=1&limit=60"
 
     saldo_usdt = 100.0
     posisi = "KOSONG"     
@@ -45,30 +45,40 @@ def jalankan_bot():
     ambang_z = 2.0
 
     print("==================================================")
-    print("⚔️ MESIN HFT SUPER LITE + ALARM TELEGRAM AKTIF!")
+    print("⚔️ MESIN HFT SUPER LITE (BYBIT) + ALARM TELEGRAM AKTIF!")
     print(f"Mengintai: {symbol} | Batas: Z-Score +/- {ambang_z}")
     print("==================================================\n")
 
-    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT menembus blokade dengan Penyamaran Browser!")
+    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Radar telah digeser. Mesin HFT kini memantau markas BYBIT!")
 
     while True:
         try:
-            # Menambahkan Penyamaran Browser (User-Agent) agar tidak diblokir Binance
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             
-            respons_raw = requests.get(url_binance, headers=headers, verify=False)
+            respons_raw = requests.post(url_bybit, headers=headers, verify=False) if requests.request == "POST" else requests.get(url_bybit, headers=headers, verify=False)
             
-            # Sistem peringatan dini jika masih diblokir
             if respons_raw.status_code != 200:
-                print(f"⚠️ Binance curiga (Kode {respons_raw.status_code}). Menunggu jalur aman...")
+                print(f"⚠️ Radar terganggu (Kode {respons_raw.status_code}). Menunggu jalur aman...")
                 time.sleep(10)
                 continue
                 
             respons = respons_raw.json()
             
-            daftar_close = [float(lilin[4]) for lilin in respons]
+            # Membongkar brankas data Bybit
+            data_kline = respons.get('result', {}).get('list', [])
+            
+            if not data_kline:
+                print("⚠️ Gagal menyedot data dari Bybit. Mengulang...")
+                time.sleep(5)
+                continue
+            
+            # Taktik Membalik Urutan: Bybit mengirim data terbaru di awal. Kita balik agar sesuai rumusan kita.
+            data_kline.reverse()
+            
+            # Mengambil harga 'close' (indeks ke-4, strukturnya sama persis dengan Binance)
+            daftar_close = [float(lilin[4]) for lilin in data_kline]
             harga_sekarang = daftar_close[-1]
             ma = statistics.mean(daftar_close)
             
@@ -89,14 +99,14 @@ def jalankan_bot():
                 posisi = "LONG"
                 harga_masuk = harga_sekarang
                 ukuran_kontrak = saldo_usdt / harga_sekarang
-                notifikasi = f"🟢 *[ALARM BUKA LONG]*\n📉 Z-Score ekstrem: {z_score:.2f}\n💰 Membeli kontrak di harga: {harga_masuk:.2f} USDT"
+                notifikasi = f"🟢 *[ALARM BUKA LONG - BYBIT]*\n📉 Z-Score ekstrem: {z_score:.2f}\n💰 Membeli kontrak di harga: {harga_masuk:.2f} USDT"
                 kirim_laporan_telegram(notifikasi)
                 
             elif posisi == "KOSONG" and z_score > ambang_z:
                 posisi = "SHORT"
                 harga_masuk = harga_sekarang
                 ukuran_kontrak = saldo_usdt / harga_sekarang
-                notifikasi = f"🔴 *[ALARM BUKA SHORT]*\n📈 Z-Score ekstrem: {z_score:.2f}\n🎯 Menjual kosong di harga: {harga_masuk:.2f} USDT"
+                notifikasi = f"🔴 *[ALARM BUKA SHORT - BYBIT]*\n📈 Z-Score ekstrem: {z_score:.2f}\n🎯 Menjual kosong di harga: {harga_masuk:.2f} USDT"
                 kirim_laporan_telegram(notifikasi)
 
             elif posisi == "LONG" and z_score >= 0:
