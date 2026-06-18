@@ -1,11 +1,11 @@
 import ccxt
-import pandas as pd
 import time
 import requests
 from datetime import datetime
 from flask import Flask
 import threading
 import os
+import statistics  # Ini adalah senjata bawaan pengganti pandas yang super ringan
 
 # ==================================================
 # 1. INISIALISASI PENYAMARAN WEB (FLASK)
@@ -17,17 +17,13 @@ def home():
     return "Lapor! Markas Bot HFT Aktif dan Berjalan!"
 
 # ==================================================
-# 2. MESIN UTAMA BOT TRADING
+# 2. MESIN UTAMA BOT TRADING (VERSI LITE TANPA PANDAS)
 # ==================================================
 def jalankan_bot():
-    # ==================================================
-    # PENGATURAN TELEGRAM KUSTOM KOMANDAN
-    # ==================================================
     TELEGRAM_TOKEN = "8245773813:AAEkD4fEBRyAsZdwXjN0OSV6zXGObOpG7Ww"
     CHAT_ID = "6407479740"
 
     def kirim_laporan_telegram(pesan):
-        """Fungsi khusus untuk mengirimkan sinyal radio ke Telegram"""
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             payload = {"chat_id": CHAT_ID, "text": pesan, "parse_mode": "Markdown"}
@@ -35,9 +31,6 @@ def jalankan_bot():
         except Exception as e:
             print(f"⚠️ Gagal mengirim laporan ke Telegram: {e}")
 
-    # ==================================================
-    # MESIN HFT FUTURES DUA ARAH (LONG & SHORT)
-    # ==================================================
     exchange = ccxt.binanceus()
     symbol = 'BTC/USDT'
 
@@ -50,22 +43,28 @@ def jalankan_bot():
     window_size = 60 
 
     print("==================================================")
-    print("⚔️ MESIN HFT FUTURES + ALARM TELEGRAM AKTIF!")
+    print("⚔️ MESIN HFT LITE + ALARM TELEGRAM AKTIF!")
     print(f"Mengintai: {symbol} | Batas: Z-Score +/- {ambang_z}")
     print("==================================================\n")
 
-    # Mengirimkan pesan tes ke handphone Anda saat mesin dinyalakan
-    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT Futures Anda resmi diaktifkan. Radar siap berburu!")
+    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT Lite resmi diaktifkan di Termux. Radar siap berburu!")
 
     while True:
         try:
-            # Menarik data dari bursa
+            # Menarik data dari bursa (Format: [timestamp, open, high, low, close, volume])
             ohlcv = exchange.fetch_ohlcv(symbol, '1m', limit=window_size)
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             
-            harga_sekarang = df['close'].iloc[-1]
-            ma = df['close'].mean()
-            std = df['close'].std()
+            # Mengambil hanya kolom 'close' (indeks ke-4) tanpa pandas
+            daftar_close = [lilin[4] for lilin in ohlcv]
+            
+            harga_sekarang = daftar_close[-1]
+            ma = statistics.mean(daftar_close)
+            
+            try:
+                std = statistics.stdev(daftar_close)
+            except statistics.StatisticsError:
+                std = 0.0 # Mencegah error jika data kurang
+                
             if std == 0: std = 0.0001 
             
             z_score = (harga_sekarang - ma) / std
@@ -73,57 +72,48 @@ def jalankan_bot():
             
             print(f"[{waktu}] Harga: {harga_sekarang:.2f} | Z-Score: {z_score:+.2f} | Status: {posisi}")
             
-            # 1. EKSEKUSI BUKA LONG (Pasar Panik / Oversold)
+            # Logika Eksekusi Trading
             if posisi == "KOSONG" and z_score < -ambang_z:
                 posisi = "LONG"
                 harga_masuk = harga_sekarang
                 ukuran_kontrak = saldo_usdt / harga_sekarang
-                
                 notifikasi = f"🟢 *[ALARM BUKA LONG]*\n📉 Z-Score ekstrem: {z_score:.2f}\n💰 Membeli kontrak di harga: {harga_masuk:.2f} USDT"
                 kirim_laporan_telegram(notifikasi)
                 
-            # 2. EKSEKUSI BUKA SHORT (Pasar Euforia / Overbought)
             elif posisi == "KOSONG" and z_score > ambang_z:
                 posisi = "SHORT"
                 harga_masuk = harga_sekarang
                 ukuran_kontrak = saldo_usdt / harga_sekarang
-                
                 notifikasi = f"🔴 *[ALARM BUKA SHORT]*\n📈 Z-Score ekstrem: {z_score:.2f}\n🎯 Menjual kosong di harga: {harga_masuk:.2f} USDT"
                 kirim_laporan_telegram(notifikasi)
 
-            # 3. TUTUP POSISI LONG (Ambil Keuntungan)
             elif posisi == "LONG" and z_score >= 0:
                 saldo_usdt = ukuran_kontrak * harga_sekarang
                 posisi = "KOSONG"
-                
-                notifikasi = f"💰 *[TAKE PROFIT LONG SUCCESS]*\n⚖️ Z-Score kembali normal: {z_score:.2f}\n🚪 Keluar di harga: {harga_sekarang:.2f}\n💵 Total Saldo: {saldo_usdt:.4f} USDT"
+                notifikasi = f"💰 *[TAKE PROFIT LONG SUCCESS]*\n⚖️ Z-Score normal: {z_score:.2f}\n🚪 Keluar di harga: {harga_sekarang:.2f}\n💵 Saldo: {saldo_usdt:.4f} USDT"
                 kirim_laporan_telegram(notifikasi)
 
-            # 4. TUTUP POSISI SHORT (Ambil Keuntungan)
             elif posisi == "SHORT" and z_score <= 0:
                 profit = (harga_masuk - harga_sekarang) * ukuran_kontrak
                 saldo_usdt = saldo_usdt + profit
                 posisi = "KOSONG"
-                
-                notifikasi = f"💰 *[TAKE PROFIT SHORT SUCCESS]*\n⚖️ Z-Score kembali normal: {z_score:.2f}\n🚪 Keluar di harga: {harga_sekarang:.2f}\n💵 Total Saldo: {saldo_usdt:.4f} USDT"
+                notifikasi = f"💰 *[TAKE PROFIT SHORT SUCCESS]*\n⚖️ Z-Score normal: {z_score:.2f}\n🚪 Keluar di harga: {harga_sekarang:.2f}\n💵 Saldo: {saldo_usdt:.4f} USDT"
                 kirim_laporan_telegram(notifikasi)
                 
-            time.sleep(10) # Istirahat 10 detik sebelum memindai lagi
+            time.sleep(10)
             
         except Exception as e:
             print(f"⚠️ Radar terganggu: {e}")
             time.sleep(5)
 
 # ==================================================
-# 3. PEMICU PELUNCURAN GANDA (WEB + BOT)
+# 3. PEMICU PELUNCURAN
 # ==================================================
 if __name__ == "__main__":
-    # Menyalakan bot di jalur latar belakang
     bot_thread = threading.Thread(target=jalankan_bot)
     bot_thread.daemon = True
     bot_thread.start()
     
-    # Menyalakan server web (Wajib untuk Render)
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
-    
+
