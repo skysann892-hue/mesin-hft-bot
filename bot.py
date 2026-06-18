@@ -7,7 +7,6 @@ import os
 import statistics
 import urllib3
 
-# Matikan peringatan SSL di terminal
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==================================================
@@ -20,7 +19,7 @@ def home():
     return "Lapor! Markas Bot HFT Aktif dan Berjalan!"
 
 # ==================================================
-# 2. MESIN UTAMA BOT TRADING (SUPER LITE)
+# 2. MESIN UTAMA BOT TRADING
 # ==================================================
 def jalankan_bot():
     TELEGRAM_TOKEN = "8245773813:AAEkD4fEBRyAsZdwXjN0OSV6zXGObOpG7Ww"
@@ -30,14 +29,13 @@ def jalankan_bot():
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             payload = {"chat_id": CHAT_ID, "text": pesan, "parse_mode": "Markdown"}
-            # verify=False untuk menembus blokade SSL
             requests.post(url, json=payload, verify=False)
         except Exception as e:
-            print(f"⚠️ Gagal mengirim laporan ke Telegram: {e}")
+            pass
 
-    # Menggunakan API cadangan Binance (Anti-Blokir)
+    # KEMBALI MENGGUNAKAN JALUR UTAMA BINANCE KARENA VPN AKTIF
     symbol = 'BTCUSDT'
-    url_binance = f"https://api.binance.info/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
+    url_binance = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
 
     saldo_usdt = 100.0
     posisi = "KOSONG"     
@@ -51,21 +49,32 @@ def jalankan_bot():
     print(f"Mengintai: {symbol} | Batas: Z-Score +/- {ambang_z}")
     print("==================================================\n")
 
-    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT Super Lite resmi diaktifkan di Termux. Bebas halangan!")
+    kirim_laporan_telegram("🤖 *Lapor, Komandan!* Mesin HFT menembus blokade dengan Penyamaran Browser!")
 
     while True:
         try:
-            # Menyedot data pasar secara terus dengan mematikan verifikasi SSL
-            respons = requests.get(url_binance, verify=False).json()
+            # Menambahkan Penyamaran Browser (User-Agent) agar tidak diblokir Binance
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            respons_raw = requests.get(url_binance, headers=headers, verify=False)
+            
+            # Sistem peringatan dini jika masih diblokir
+            if respons_raw.status_code != 200:
+                print(f"⚠️ Binance curiga (Kode {respons_raw.status_code}). Menunggu jalur aman...")
+                time.sleep(10)
+                continue
+                
+            respons = respons_raw.json()
             
             daftar_close = [float(lilin[4]) for lilin in respons]
-            
             harga_sekarang = daftar_close[-1]
             ma = statistics.mean(daftar_close)
             
             try:
                 std = statistics.stdev(daftar_close)
-            except statistics.StatisticsError:
+            except:
                 std = 0.0001
                 
             if std == 0: std = 0.0001 
